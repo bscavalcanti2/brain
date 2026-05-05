@@ -29,10 +29,10 @@ export async function GET(request: NextRequest) {
     // Convert to string format for pgvector
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
 
-    // Build filters
+    // Build filters ($1=embedding, $2=query headline, filters start at $3)
     const conditions: string[] = [];
     const params: any[] = [];
-    let paramIndex = 1;
+    let paramIndex = 3;
 
     conditions.push(`n.embedding IS NOT NULL`);
 
@@ -54,8 +54,6 @@ export async function GET(request: NextRequest) {
 
     const whereClause = conditions.join(' AND ');
 
-    // Cosine similarity search using pgvector
-    // 1 - (embedding <=> query_embedding) gives cosine similarity (1 = identical)
     const sql = `
       SELECT 
         n.id,
@@ -66,21 +64,20 @@ export async function GET(request: NextRequest) {
         n.updated_at as "updatedAt",
         1 - (n.embedding <=> $1::vector) as similarity,
         array_agg(DISTINCT jsonb_build_object('id', t.id, 'name', t.name, 'slug', t.slug)) FILTER (WHERE t.id IS NOT NULL) as tags,
-        ts_headline('english', n.content, websearch_to_tsquery('english', $${paramIndex}), 'MaxWords=60, MinWords=25') as snippet
+        ts_headline('english', n.content, plainto_tsquery('english', $2), 'MaxWords=60, MinWords=25') as snippet
       FROM notes n
       LEFT JOIN note_tags nt ON n.id = nt.note_id
       LEFT JOIN tags t ON nt.tag_id = t.id
       WHERE ${whereClause}
       GROUP BY n.id
       ORDER BY similarity DESC
-      LIMIT $${paramIndex + 1}
+      LIMIT $${paramIndex}
     `;
 
-    params.splice(0, 0, embeddingStr); // Insert embedding at $1
-    params.push(query); // For headline
-    params.push(limit);
+    // $1 = embedding vector, $2 = query string for headline, $3+ = filters, $last = limit
+    const sqlParams: unknown[] = [embeddingStr, query, ...params, limit];
 
-    const results = await db.$queryRawUnsafe<any[]>(sql, ...params);
+    const results = await db.$queryRawUnsafe<any[]>(sql, ...sqlParams);
 
     return NextResponse.json({
       query,

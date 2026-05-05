@@ -14,4 +14,4 @@ WITH (m = 16, ef_construction = 64);
 -- The actual API call is made from the Next.js API route (more flexible)
 -- This index is enough for the search queries
 
-COMMENT ON COLUMN notes.embedding IS 'OpenAI text-embedding-3-small vector (1536 dimensions)';
+COMMENT ON COLUMN notes.embedding IS 'Zhipu embedding-3 vector (2048 dimensions)';
