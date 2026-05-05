@@ -1,65 +1,122 @@
-import Image from "next/image";
+import Link from 'next/link';
+import NoteCard from '@/components/NoteCard';
+import QuickCapture from '@/components/QuickCapture';
+import { getNotes, getDashboardStats } from '@/app/actions';
 
-export default function Home() {
+function sourceIcon(source: string): string {
+  switch (source) {
+    case 'auto_claw': return '🦞';
+    case 'claude_code': return '🤖';
+    case 'codex': return '🧑‍💻';
+    default: return '✋';
+  }
+}
+
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'auto_claw': return 'AutoClaw';
+    case 'claude_code': return 'Claude Code';
+    case 'codex': return 'Codex';
+    default: return 'Manual';
+  }
+}
+
+export default async function DashboardPage() {
+  let stats = { totalNotes: 0, notesThisWeek: 0, totalTags: 0, bySource: {} as Record<string, number> };
+  let recentNotes: Array<{
+    id: string;
+    title: string;
+    content?: string;
+    source: string;
+    createdAt: string;
+    updatedAt: string;
+    tags: Array<{ id: string; name: string; slug: string }>;
+  }> = [];
+
+  try {
+    const notesData = await getNotes({ limit: 10, sort: 'created_at', order: 'desc' });
+    recentNotes = notesData.notes;
+    stats = await getDashboardStats();
+  } catch {
+    // DB not configured yet
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="max-w-5xl mx-auto space-y-8">
+      {/* Page title */}
+      <div>
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+        <p className="text-sm text-slate-400 mt-1">Your knowledge base at a glance</p>
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <p className="text-2xl font-bold text-white">{stats.totalNotes}</p>
+          <p className="text-sm text-slate-400 mt-1">Total Notes</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <p className="text-2xl font-bold text-emerald-400">{stats.notesThisWeek}</p>
+          <p className="text-sm text-slate-400 mt-1">This Week</p>
         </div>
-      </main>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <p className="text-2xl font-bold text-blue-400">{stats.totalTags}</p>
+          <p className="text-sm text-slate-400 mt-1">Total Tags</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <div className="flex flex-wrap gap-2 mt-1">
+            {Object.entries(stats.bySource).map(([source, count]) => (
+              <span key={source} className="text-sm text-slate-300" title={sourceLabel(source)}>
+                {sourceIcon(source)} {count}
+              </span>
+            ))}
+            {Object.keys(stats.bySource).length === 0 && (
+              <span className="text-sm text-slate-500">No notes yet</span>
+            )}
+          </div>
+          <p className="text-sm text-slate-400 mt-2">By Source</p>
+        </div>
+      </div>
+
+      {/* Quick Capture */}
+      <QuickCapture />
+
+      {/* Recent Notes */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Recent Notes</h2>
+          <Link href="/notes" className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+            View all →
+          </Link>
+        </div>
+
+        {recentNotes.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-4xl mb-3">🧠</p>
+            <p className="text-slate-400 mb-4">Your brain is empty. Start capturing knowledge!</p>
+            <Link
+              href="/notes/new"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+            >
+              Create your first note
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {recentNotes.map((note) => (
+              <NoteCard
+                key={note.id}
+                id={note.id}
+                title={note.title}
+                content={note.content}
+                source={note.source}
+                createdAt={note.createdAt}
+                tags={note.tags}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
