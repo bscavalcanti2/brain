@@ -8,19 +8,62 @@ const API_BASE = 'https://open.bigmodel.cn/api/paas/v4/embeddings';
 let cachedToken: string | null = null;
 let tokenExpiry = 0;
 
+// ─── JWT Generation (for production — ZHIPU_API_KEY) ────────────────────────
+// Zhipu API keys are in the format "{id}.{secret}"
+// We generate a JWT from them: header.payload.signature
+
+function generateJwt(apiKey: string): string {
+  const [id, secret] = apiKey.split('.');
+  if (!id || !secret) throw new Error('Invalid ZHIPU_API_KEY format. Expected "{id}.{secret}"');
+
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', sign_type: 'SIGN' })).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(
+    JSON.stringify({ api_key: id, exp: now + 3600, timestamp: now })
+  ).toString('base64url');
+
+  const crypto = require('crypto');
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`${header}.${payload}`)
+    .digest('base64url');
+
+  return `${header}.${payload}.${signature}`;
+}
+
+// ─── Token Acquisition ──────────────────────────────────────────────────────
+
 async function getToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry) {
     return cachedToken;
   }
-  const res = await fetch(TOKEN_URL);
-  if (!res.ok) throw new Error('Failed to get token from local service');
-  const text = await res.text();
-  // Response is "Bearer <token>" or just "<token>"
-  cachedToken = text.replace(/^Bearer\s+/i, '').trim();
-  // Cache for 30 minutes (tokens typically last longer)
-  tokenExpiry = now + 30 * 60 * 1000;
-  return cachedToken;
+
+  // Production: use ZHIPU_API_KEY env var (works on Vercel, any cloud)
+  const zhipuKey = process.env.ZHIPU_API_KEY;
+  if (zhipuKey) {
+    cachedToken = generateJwt(zhipuKey);
+    tokenExpiry = now + 50 * 60 * 1000; // 50 min (JWT lasts 1h)
+    return cachedToken;
+  }
+
+  // Local dev: use AutoGLM token service (zero config)
+  try {
+    const res = await fetch(TOKEN_URL, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const text = await res.text();
+      cachedToken = text.replace(/^Bearer\s+/i, '').trim();
+      tokenExpiry = now + 30 * 60 * 1000;
+      return cachedToken;
+    }
+  } catch {
+    // Local service not available
+  }
+
+  throw new Error(
+    'No embedding token source available. ' +
+    'Set ZHIPU_API_KEY env var for production, or ensure AutoGLM token service is running locally.'
+  );
 }
 
 // ─── Generate Embedding ─────────────────────────────────────────────────────
@@ -28,7 +71,11 @@ async function getToken(): Promise<string> {
 /**
  * Generate an embedding vector for a given text.
  * Combines title (weighted) + content for better relevance.
- * Uses Zhipu embedding-3 model via AutoGLM token service.
+ * Uses Zhipu embedding-3 model.
+ *
+ * Token source priority:
+ * 1. ZHIPU_API_KEY env var (production / Vercel)
+ * 2. AutoGLM token service at 127.0.0.1:18432 (local dev)
  */
 export async function generateEmbedding(title: string, content: string): Promise<number[]> {
   const token = await getToken();
