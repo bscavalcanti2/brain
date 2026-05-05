@@ -15,6 +15,7 @@ export interface ListNotesParams {
   sort?: string;
   order?: string;
   q?: string;
+  searchMode?: 'fulltext' | 'semantic' | 'hybrid';
 }
 
 export interface ListNotesResult {
@@ -51,6 +52,12 @@ export async function getNotes(params: ListNotesParams = {}): Promise<ListNotesR
 
   // If search query, use full-text search
   if (params.q && params.q.trim().length > 0) {
+    const mode = params.searchMode || 'fulltext';
+    if (mode === 'semantic') {
+      return searchNotesSemantic(params.q.trim(), { page, limit, tag, source });
+    } else if (mode === 'hybrid') {
+      return searchNotesHybrid(params.q.trim(), { page, limit, tag, source });
+    }
     return searchNotesList(params.q.trim(), { page, limit, tag, source, sortField, sortOrder });
   }
 
@@ -165,6 +172,230 @@ async function searchNotesList(
     })),
     total: results.length,
     page,
+    limit,
+    totalPages: 1,
+  };
+}
+
+// ─── Semantic Search (pgvector) ──────────────────────────────────────────────
+
+async function searchNotesSemantic(
+  query: string,
+  opts: { page: number; limit: number; tag?: string; source?: string }
+): Promise<ListNotesResult> {
+  const { limit, tag, source } = opts;
+
+  try {
+    const { generateEmbedding } = await import('@/lib/embeddings');
+    const queryEmbedding = await generateEmbedding(query, '');
+    const embeddingStr = `[${queryEmbedding.join(',')}]`;
+
+    const conditions: string[] = ['n.embedding IS NOT NULL'];
+    const params: unknown[] = [embeddingStr];
+    let pi = 2;
+
+    if (tag) {
+      conditions.push(`EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id AND t.slug = $${pi})`);
+      params.push(tag);
+      pi++;
+    }
+    if (source) {
+      conditions.push(`n.source = $${pi}`);
+      params.push(source);
+      pi++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const results = await db.$queryRawUnsafe<
+      Array<{
+        id: string;
+        title: string;
+        content: string;
+        source: string;
+        created_at: Date;
+        updated_at: Date;
+        tags: Array<{ id: string; name: string; slug: string }> | null;
+        similarity: number;
+      }>
+    >(
+      `
+      SELECT n.id, n.title, n.content, n.source, n.created_at, n.updated_at,
+        array_agg(DISTINCT jsonb_build_object('id', t.id, 'name', t.name, 'slug', t.slug)) FILTER (WHERE t.id IS NOT NULL) as tags,
+        1 - (n.embedding <=> $1::vector) as similarity
+      FROM notes n
+      LEFT JOIN note_tags nt ON n.id = nt.note_id
+      LEFT JOIN tags t ON nt.tag_id = t.id
+      WHERE ${whereClause}
+      GROUP BY n.id
+      ORDER BY similarity DESC
+      LIMIT $${pi}
+      `,
+      ...params,
+      limit
+    );
+
+    return {
+      notes: results.map((row) => ({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        source: row.source,
+        createdAt: row.created_at.toISOString(),
+        updatedAt: row.updated_at.toISOString(),
+        tags: row.tags || [],
+      })),
+      total: results.length,
+      page: 1,
+      limit,
+      totalPages: 1,
+    };
+  } catch (err) {
+    // If semantic search fails (no API key, etc.), fall back to full-text
+    console.warn('[Actions] Semantic search failed, falling back to full-text:', err);
+    return searchNotesList(query, { ...opts, sortField: 'created_at', sortOrder: 'desc' });
+  }
+}
+
+// ─── Hybrid Search (RRF) ─────────────────────────────────────────────────────
+
+async function searchNotesHybrid(
+  query: string,
+  opts: { page: number; limit: number; tag?: string; source?: string }
+): Promise<ListNotesResult> {
+  const { limit, tag, source } = opts;
+  const RRF_K = 60;
+
+  // Full-text results
+  const ftsConditions: string[] = [];
+  const ftsParams: unknown[] = [query];
+  let pi = 2;
+
+  if (tag) {
+    ftsConditions.push(`EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id AND t.slug = $${pi})`);
+    ftsParams.push(tag);
+    pi++;
+  }
+  if (source) {
+    ftsConditions.push(`n.source = $${pi}`);
+    ftsParams.push(source);
+    pi++;
+  }
+
+  const ftsWhere = ftsConditions.length > 0 ? `AND ${ftsConditions.join(' AND ')}` : '';
+
+  const ftsResults = await db.$queryRawUnsafe<
+    Array<{ id: string; rank: number }>
+  >(
+    `
+    SELECT n.id, ts_rank(n.search_vec, plainto_tsquery('portuguese', $1)) as rank
+    FROM notes n
+    WHERE n.search_vec @@ plainto_tsquery('portuguese', $1) ${ftsWhere}
+    ORDER BY rank DESC
+    LIMIT $${pi}
+    `,
+    ...ftsParams,
+    limit * 2
+  );
+
+  // Semantic results
+  let semResults: Array<{ id: string; similarity: number }> = [];
+  try {
+    const { generateEmbedding } = await import('@/lib/embeddings');
+    const queryEmbedding = await generateEmbedding(query, '');
+    const embeddingStr = `[${queryEmbedding.join(',')}]`;
+
+    const semConditions: string[] = ['n.embedding IS NOT NULL'];
+    const semParams: unknown[] = [embeddingStr];
+    pi = 2;
+
+    if (tag) {
+      semConditions.push(`EXISTS (SELECT 1 FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id AND t.slug = $${pi})`);
+      semParams.push(tag);
+      pi++;
+    }
+    if (source) {
+      semConditions.push(`n.source = $${pi}`);
+      semParams.push(source);
+      pi++;
+    }
+
+    semResults = await db.$queryRawUnsafe<
+      Array<{ id: string; similarity: number }>
+    >(
+      `
+      SELECT n.id, 1 - (n.embedding <=> $1::vector) as similarity
+      FROM notes n
+      WHERE ${semConditions.join(' AND ')}
+      ORDER BY similarity DESC
+      LIMIT $${pi}
+      `,
+      ...semParams,
+      limit * 2
+    );
+  } catch (err) {
+    console.warn('[Actions] Hybrid: semantic unavailable, using FTS only');
+  }
+
+  // Reciprocal Rank Fusion
+  const rrfScores = new Map<string, number>();
+
+  ftsResults.forEach((r, idx) => {
+    rrfScores.set(r.id, (rrfScores.get(r.id) || 0) + 1 / (RRF_K + idx + 1));
+  });
+
+  semResults.forEach((r, idx) => {
+    rrfScores.set(r.id, (rrfScores.get(r.id) || 0) + 1 / (RRF_K + idx + 1));
+  });
+
+  const sortedIds = [...rrfScores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id]) => id);
+
+  if (sortedIds.length === 0) {
+    return { notes: [], total: 0, page: 1, limit, totalPages: 1 };
+  }
+
+  const noteResults = await db.$queryRawUnsafe<
+    Array<{
+      id: string;
+      title: string;
+      content: string;
+      source: string;
+      created_at: Date;
+      updated_at: Date;
+      tags: Array<{ id: string; name: string; slug: string }> | null;
+    }>
+  >(
+    `
+    SELECT n.id, n.title, n.content, n.source, n.created_at, n.updated_at,
+      array_agg(DISTINCT jsonb_build_object('id', t.id, 'name', t.name, 'slug', t.slug)) FILTER (WHERE t.id IS NOT NULL) as tags
+    FROM notes n
+    LEFT JOIN note_tags nt ON n.id = nt.note_id
+    LEFT JOIN tags t ON nt.tag_id = t.id
+    WHERE n.id = ANY($1::uuid[])
+    GROUP BY n.id
+    `,
+    sortedIds
+  );
+
+  // Sort by RRF score
+  const scoreOrder = new Map(sortedIds.map((id, idx) => [id, idx]));
+  noteResults.sort((a, b) => (scoreOrder.get(a.id) || 0) - (scoreOrder.get(b.id) || 0));
+
+  return {
+    notes: noteResults.map((row) => ({
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      source: row.source,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+      tags: row.tags || [],
+    })),
+    total: noteResults.length,
+    page: 1,
     limit,
     totalPages: 1,
   };

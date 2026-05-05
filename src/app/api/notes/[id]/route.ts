@@ -4,6 +4,23 @@ import { validateApiKey } from '@/lib/auth';
 import { slugify } from '@/lib/utils';
 import type { UpdateNoteInput } from '@/types';
 
+// ─── Background Embedding Generation ─────────────────────────────────────────
+
+async function generateEmbeddingInBackground(noteId: string, title: string, content: string) {
+  try {
+    const { generateEmbedding } = await import('@/lib/embeddings');
+    const embedding = await generateEmbedding(title, content);
+    const embeddingStr = `[${embedding.join(',')}]`;
+    await db.$executeRawUnsafe(
+      `UPDATE notes SET embedding = $1::vector WHERE id = $2`,
+      embeddingStr,
+      noteId
+    );
+  } catch (err) {
+    // Silently fail — semantic search just won't work for this note
+  }
+}
+
 // GET /api/notes/:id — Get single note
 export async function GET(
   req: NextRequest,
@@ -144,6 +161,13 @@ export async function PUT(
       createdAt: note.createdAt.toISOString(),
       updatedAt: note.updatedAt.toISOString(),
     });
+
+    // Regenerate embedding if title or content changed
+    if (body.title !== undefined || body.content !== undefined) {
+      generateEmbeddingInBackground(note.id, note.title, note.content).catch((err) => {
+        console.warn('[Embedding] Background regeneration failed:', err);
+      });
+    }
   } catch (error) {
     console.error('Error updating note:', error);
     return NextResponse.json({ error: 'Failed to update note' }, { status: 500 });

@@ -7,6 +7,24 @@ import type { CreateNoteInput } from '@/types';
 
 const VALID_SOURCES = ['auto_claw', 'claude_code', 'codex', 'manual'];
 
+// ─── Background Embedding Generation ─────────────────────────────────────────
+
+async function generateEmbeddingInBackground(noteId: string, title: string, content: string) {
+  try {
+    const { generateEmbedding } = await import('@/lib/embeddings');
+    const embedding = await generateEmbedding(title, content);
+    const embeddingStr = `[${embedding.join(',')}]`;
+    await db.$executeRawUnsafe(
+      `UPDATE notes SET embedding = $1::vector WHERE id = $2`,
+      embeddingStr,
+      noteId
+    );
+  } catch (err) {
+    // Silently fail — semantic search just won't work for this note
+    // Most common cause: OPENAI_API_KEY not set
+  }
+}
+
 // GET /api/notes — List notes
 export async function GET(req: NextRequest) {
   const auth = validateApiKey(req);
@@ -193,6 +211,11 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 }
     );
+
+    // Generate embedding in background (non-blocking)
+    generateEmbeddingInBackground(note.id, note.title, note.content).catch((err) => {
+      console.warn('[Embedding] Background generation failed:', err);
+    });
   } catch (error) {
     console.error('Error creating note:', error);
     return NextResponse.json({ error: 'Failed to create note' }, { status: 500 });

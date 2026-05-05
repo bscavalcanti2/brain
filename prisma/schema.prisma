@@ -13,6 +13,7 @@ model Note {
   source     String   @default("manual")
   metadata   Json     @default("{}")
   searchVec  Unsupported("tsvector")? @map("search_vec")
+  embedding  Unsupported("vector(1536)")? @map("embedding")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 

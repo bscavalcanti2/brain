@@ -35,6 +35,7 @@ function NotesContent() {
   const source = searchParams.get('source') || '';
   const sort = searchParams.get('sort') || 'created_at';
   const order = searchParams.get('order') || 'desc';
+  const searchMode = searchParams.get('mode') || 'fulltext';
 
   function updateParams(updates: Record<string, string>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -62,6 +63,7 @@ function NotesContent() {
           sort,
           order,
           q: q || undefined,
+          searchMode: (searchMode as 'fulltext' | 'semantic' | 'hybrid') || undefined,
         });
         setNotes(data.notes);
         setTotal(data.total);
@@ -72,7 +74,7 @@ function NotesContent() {
       setLoading(false);
     }
     load();
-  }, [page, tag, source, sort, order, q]);
+  }, [page, tag, source, sort, order, q, searchMode]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -105,6 +107,34 @@ function NotesContent() {
 
       {/* Search */}
       <SearchBar defaultValue={q} />
+
+      {/* Search mode toggle (only when searching) */}
+      {q && (
+        <div className="flex items-center gap-1">
+          {([
+            { value: 'fulltext', label: '📝 Text' },
+            { value: 'semantic', label: '🧠 Semantic' },
+            { value: 'hybrid', label: '⚡ Hybrid' },
+          ] as const).map((mode) => (
+            <button
+              key={mode.value}
+              onClick={() => updateParams({ mode: searchMode === mode.value ? '' : mode.value })}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                searchMode === mode.value
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:border-slate-600 hover:text-slate-300'
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+          {searchMode !== 'fulltext' && (
+            <span className="text-xs text-slate-600 ml-1">
+              {searchMode === 'semantic' ? 'meaning-based' : 'best of both'}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
