@@ -15,8 +15,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: '🧠 Brain — Bruno\'s Second Brain',
-  description: 'Personal knowledge base for Bruno and AI agents',
+  title: {
+    default: '🧠 Brain — Bruno\'s Second Brain',
+    template: '%s | Brain',
+  },
+  description: 'Personal knowledge base for Bruno and AI agents. Capture, search, and connect your thoughts.',
+  keywords: ['knowledge base', 'second brain', 'notes', 'AI', 'personal wiki'],
+  authors: [{ name: 'Bruno' }],
+  openGraph: {
+    title: '🧠 Brain — Bruno\'s Second Brain',
+    description: 'Personal knowledge base for Bruno and AI agents.',
+    type: 'website',
+    locale: 'en_US',
+    siteName: 'Brain',
+  },
+  twitter: {
+    card: 'summary',
+    title: '🧠 Brain — Bruno\'s Second Brain',
+    description: 'Personal knowledge base for Bruno and AI agents.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default async function RootLayout({

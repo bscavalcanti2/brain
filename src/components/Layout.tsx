@@ -1,6 +1,7 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import type { TagWithCount } from '@/app/actions';
 
@@ -10,6 +11,51 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, tags }: LayoutProps) {
+  const router = useRouter();
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Cmd+K → focus search on notes page
+      if (isMod && e.key === 'k') {
+        e.preventDefault();
+        router.push('/notes');
+        // Focus the search input after navigation
+        setTimeout(() => {
+          const input = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
+          input?.focus();
+        }, 100);
+      }
+
+      // Cmd+N → new note
+      if (isMod && e.key === 'n') {
+        e.preventDefault();
+        router.push('/notes/new');
+      }
+
+      // Cmd+G → graph
+      if (isMod && e.key === 'g') {
+        e.preventDefault();
+        router.push('/graph');
+      }
+
+      // Escape → clear search / go home
+      if (e.key === 'Escape') {
+        const input = document.activeElement as HTMLInputElement;
+        if (input?.matches('input[placeholder*="Search"]')) {
+          input.value = '';
+          input.blur();
+          router.push('/notes');
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [router]);
+
   return (
     <Suspense>
       <div className="flex h-screen bg-slate-950">
@@ -22,6 +68,13 @@ export default function Layout({ children, tags }: LayoutProps) {
               Bruno&apos;s Second Brain
             </h1>
             <div className="flex items-center gap-3">
+              {/* Keyboard shortcut hints */}
+              <div className="hidden lg:flex items-center gap-2 text-xs text-slate-600">
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-500">⌘K</kbd>
+                <span>Search</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-500">⌘N</kbd>
+                <span>New</span>
+              </div>
               <a
                 href="/notes/new"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"

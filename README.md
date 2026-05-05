@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🧠 Brain — Bruno's Second Brain
+
+Personal knowledge base for Bruno and AI agents. Capture, search, and connect your thoughts using full-text search, semantic search, and a knowledge graph.
+
+## Features
+
+- **Full-text search** with Portuguese + English support
+- **Semantic search** (meaning-based) via Cohere embeddings
+- **Hybrid search** combining both with Reciprocal Rank Fusion
+- **Knowledge graph** — interactive force-directed visualization
+- **Multi-agent** — AutoClaw, Claude Code, Codex, GLM-5, OpenCode
+- **Markdown** notes with tags, source tracking, and note linking
+- **Dark mode** — slate/emerald design system
+- **Keyboard shortcuts** — ⌘K search, ⌘N new note, ⌘G graph
+
+## Tech Stack
+
+- **Next.js 16** (App Router, Turbopack)
+- **Prisma 7** + **Supabase** (PostgreSQL + pgvector)
+- **Cohere** embed-v4.0 (semantic search)
+- **react-force-graph-2d** (graph visualization)
+- **Tailwind CSS** (styling)
+- **TypeScript** (strict mode)
 
 ## Getting Started
 
-First, run the development server:
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/bscavalcanti2/brain.git
+cd brain
+npm install
+```
+
+### 2. Environment Variables
+
+Copy `.env.example` to `.env.local` and fill in:
+
+```bash
+cp .env.example .env.local
+```
+
+Required:
+- `DATABASE_URL` — Supabase connection (with pgbouncer)
+- `DIRECT_URL` — Supabase direct connection (no pgbouncer)
+- `BRAIN_API_KEY` — API key for authenticating requests
+- `COHERE_API_KEY` — [Cohere](https://dashboard.cohere.com/api-keys) API key (free tier)
+
+### 3. Setup Database
+
+```bash
+npx prisma generate
+npx prisma db push
+
+# Run embedding migration
+npx tsx scripts/migrate-embeddings.ts
+```
+
+### 4. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 5. Backfill Embeddings
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+After creating some notes, generate embeddings:
 
-## Learn More
+```bash
+# Via API (server must be running)
+curl -X POST -H "Authorization: Bearer $BRAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"batchSize":20}' \
+  http://localhost:3000/api/embeddings/generate
 
-To learn more about Next.js, take a look at the following resources:
+# Or via CLI
+./scripts/brain.sh embed-backfill
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Multi-Agent Setup
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Each agent reads its own instruction file from the repo root:
 
-## Deploy on Vercel
+| Agent | File | Source Value |
+|-------|------|-------------|
+| AutoClaw | `TOOLS.md` (workspace) | `auto_claw` |
+| Claude Code | `CLAUDE.md` | `claude_code` |
+| Codex | `CODEX.md` | `codex` |
+| GLM-5 | `GLM5.md` | `glm5` |
+| OpenCode | `AGENTS.md` | `opencode` |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## CLI
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+./scripts/brain.sh add "Title" "Content" "tag1,tag2"
+./scripts/brain.sh search "query" [fulltext|semantic|hybrid]
+./scripts/brain.sh list [limit]
+./scripts/brain.sh get <note-id>
+./scripts/brain.sh tags
+./scripts/brain.sh embed-status
+./scripts/brain.sh embed-backfill
+```
+
+## API Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/notes` | Create a note |
+| `GET` | `/api/notes` | List notes (paginated) |
+| `GET` | `/api/notes/:id` | Get a note |
+| `PUT` | `/api/notes/:id` | Update a note |
+| `DELETE` | `/api/notes/:id` | Delete a note |
+| `GET` | `/api/search?q=...` | Full-text search |
+| `GET` | `/api/search/semantic?q=...` | Semantic search |
+| `GET` | `/api/search/hybrid?q=...` | Hybrid search |
+| `GET` | `/api/graph` | Knowledge graph data |
+| `GET` | `/api/embeddings/generate` | Embedding status |
+| `POST` | `/api/embeddings/generate` | Backfill embeddings |
+
+## License
+
+Private — Bruno's personal project.
