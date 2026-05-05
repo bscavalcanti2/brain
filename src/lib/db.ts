@@ -6,10 +6,12 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  let connectionString = process.env.DATABASE_URL || process.env.DIRECT_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL or DIRECT_URL environment variable is not set');
   }
+  // Remove pgbouncer param — PrismaPg handles pooling internally
+  connectionString = connectionString.replace('?pgbouncer=true', '').replace('&pgbouncer=true', '');
   const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
