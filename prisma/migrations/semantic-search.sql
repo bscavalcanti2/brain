@@ -1,8 +1,8 @@
 -- Migration: Add embedding column for semantic search
 -- Run this in Supabase SQL Editor
 
--- Add vector column (1536 dimensions for text-embedding-3-small)
-ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(1536);
+-- Add vector column (2048 dimensions for Zhipu embedding-3)
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(2048);
 
 -- Create HNSW index for fast approximate nearest neighbor search
 CREATE INDEX IF NOT EXISTS idx_notes_embedding 

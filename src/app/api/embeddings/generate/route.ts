@@ -4,7 +4,7 @@ import { validateApiKey } from '@/lib/auth';
 
 // ─── POST /api/embeddings/generate ──────────────────────────────────────────
 // Generate embeddings for existing notes that don't have one yet.
-// Call this after setting OPENAI_API_KEY to backfill embeddings.
+// Call this to backfill embeddings for existing notes.
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,9 +58,9 @@ export async function POST(request: NextRequest) {
       remaining: await getRemainingCount(),
     });
   } catch (error: any) {
-    if (error?.message?.includes('OPENAI_API_KEY')) {
+    if (error?.message?.includes('token')) {
       return NextResponse.json(
-        { error: 'OPENAI_API_KEY environment variable is not set' },
+        { error: 'Embedding service unavailable — check AutoGLM token service' },
         { status: 503 }
       );
     }

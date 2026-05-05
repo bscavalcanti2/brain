@@ -98,9 +98,9 @@ export async function GET(request: NextRequest) {
       total: results.length,
     });
   } catch (error: any) {
-    if (error?.message?.includes('OPENAI_API_KEY')) {
+    if (error?.message?.includes('token')) {
       return NextResponse.json(
-        { error: 'Semantic search is not configured. OPENAI_API_KEY is required.' },
+        { error: 'Semantic search is not configured. AutoGLM token service is required.' },
         { status: 503 }
       );
     }

@@ -21,7 +21,7 @@ async function generateEmbeddingInBackground(noteId: string, title: string, cont
     );
   } catch (err) {
     // Silently fail — semantic search just won't work for this note
-    // Most common cause: OPENAI_API_KEY not set
+    // Most common cause: AutoGLM token service unavailable
   }
 }
 
