@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+model Note {
+  id         String   @id @default(uuid())
+  title      String
+  content    String   @default("")
+  source     String   @default("manual")
+  metadata   Json     @default("{}")
+  searchVec  Unsupported("tsvector")? @map("search_vec")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tags      NoteTag[]
+  linksFrom NoteLink[] @relation("FromNote")
+  linksTo   NoteLink[] @relation("ToNote")
+
+  @@map("notes")
+}
+
+model Tag {
+  id     String    @id @default(uuid())
+  name   String    @unique
+  slug   String    @unique
+
+  notes NoteTag[]
+
+  @@map("tags")
+}
+
+model NoteTag {
+  noteId String @map("note_id")
+  tagId  String @map("tag_id")
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, tagId])
+  @@map("note_tags")
+}
+
+model NoteLink {
+  sourceId  String   @map("source_id")
+  targetId  String   @map("target_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  source Note @relation("FromNote", fields: [sourceId], references: [id], onDelete: Cascade)
+  target Note @relation("ToNote", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([sourceId, targetId])
+  @@map("note_links")
+}
